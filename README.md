@@ -27,5 +27,5 @@ To run this application locally on your machine, follow these steps:
 
 **1. Clone the repository**
 ```bash
-git clone [https://github.com/yourusername/power-bi-dashboard-ai-insights.git](https://github.com/yourusername/power-bi-dashboard-ai-insights.git)
+git clone [https://github.com/alok263-commits/power-bi-dashboard-ai-insights.git](https://github.com/yourusername/power-bi-dashboard-ai-insights.git)
 cd power-bi-dashboard-ai-insights
