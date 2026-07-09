@@ -293,8 +293,12 @@ overall_avg_discount = (df[discount_col].mean() * 100) if discount_col else None
 
 
 def monthly_agg(data: pd.DataFrame, col, agg: str):
-    """Aggregates `col` for the most recent complete month vs the month before
-    it. Returns (current, previous) or None if there's no usable history."""
+    """Aggregates `col` for the most recent complete month vs the SAME month
+    one year earlier (Year-over-Year). This dataset is highly seasonal
+    (big holiday-season spikes), so month-over-month comparisons mostly
+    just measure seasonality rather than real performance change. YoY
+    strips that out. Returns (current, same_month_last_year) or None if
+    there isn't a full year of history to compare against."""
     if "Order Date" not in data.columns:
         return None
     d = data.dropna(subset=["Order Date"])
@@ -303,7 +307,12 @@ def monthly_agg(data: pd.DataFrame, col, agg: str):
     d = d.copy()
     d["_month"] = d["Order Date"].dt.to_period("M")
     months = sorted(d["_month"].unique())
-    if len(months) < 2:
+    if not months:
+        return None
+
+    latest_month = months[-1]
+    prior_year_month = latest_month - 12
+    if prior_year_month not in months:
         return None
 
     def _calc(subset: pd.DataFrame):
@@ -319,12 +328,14 @@ def monthly_agg(data: pd.DataFrame, col, agg: str):
             return subset[col].nunique()
         return None
 
-    cur = _calc(d[d["_month"] == months[-1]])
-    prev = _calc(d[d["_month"] == months[-2]])
+    cur = _calc(d[d["_month"] == latest_month])
+    prev = _calc(d[d["_month"] == prior_year_month])
     return cur, prev
 
 
-def mom_pct(data, col, agg):
+def yoy_pct(data, col, agg):
+    """Despite the name (kept for minimal diff elsewhere), this now returns
+    Year-over-Year % growth: latest month vs the same month last year."""
     result = monthly_agg(data, col, agg)
     if not result or not result[1]:
         return None
@@ -352,19 +363,19 @@ def kpi_card(label: str, value: str, delta_text: str, delta_direction: str, size
 def delta_from_mom_or_fallback(growth_pct, fallback_text, fallback_direction, unit="%"):
     if growth_pct is not None:
         direction = "up" if growth_pct >= 0 else "down"
-        return f"{growth_pct:+.0f}{unit} vs Last Month", direction
+        return f"{growth_pct:+.0f}{unit} vs Last Year", direction
     return fallback_text, fallback_direction
 
 
 # --- Revenue ---
-revenue_growth = mom_pct(filtered_df, "Sales", "sum")
+revenue_growth = yoy_pct(filtered_df, "Sales", "sum")
 revenue_share = (total_revenue / overall_revenue * 100) if overall_revenue > 0 else 0
 revenue_delta_text, revenue_dir = delta_from_mom_or_fallback(
     revenue_growth, f"{revenue_share:.0f}% of total revenue", "neutral"
 )
 
 # --- Profit ---
-profit_growth = mom_pct(filtered_df, "Profit", "sum")
+profit_growth = yoy_pct(filtered_df, "Profit", "sum")
 margin_delta_pp = profit_margin - overall_margin
 profit_fallback_dir = "up" if total_profit >= 0 else "down"
 profit_delta_text, profit_dir = delta_from_mom_or_fallback(
@@ -372,30 +383,30 @@ profit_delta_text, profit_dir = delta_from_mom_or_fallback(
 )
 
 # --- Margin ---
-sales_mom = monthly_agg(filtered_df, "Sales", "sum")
-profit_mom = monthly_agg(filtered_df, "Profit", "sum")
-if sales_mom and profit_mom and sales_mom[0] and sales_mom[1]:
-    cur_margin = (profit_mom[0] / sales_mom[0] * 100) if sales_mom[0] else 0
-    prev_margin = (profit_mom[1] / sales_mom[1] * 100) if sales_mom[1] else 0
+sales_yoy = monthly_agg(filtered_df, "Sales", "sum")
+profit_yoy = monthly_agg(filtered_df, "Profit", "sum")
+if sales_yoy and profit_yoy and sales_yoy[0] and sales_yoy[1]:
+    cur_margin = (profit_yoy[0] / sales_yoy[0] * 100) if sales_yoy[0] else 0
+    prev_margin = (profit_yoy[1] / sales_yoy[1] * 100) if sales_yoy[1] else 0
     margin_growth_pp = cur_margin - prev_margin
-    margin_delta_text = f"{margin_growth_pp:+.1f}pp vs Last Month"
+    margin_delta_text = f"{margin_growth_pp:+.1f}pp vs Last Year"
     margin_dir = "up" if margin_growth_pp >= 0 else "down"
 else:
     margin_delta_text = f"{margin_delta_pp:+.1f}pp vs {overall_margin:.1f}% avg"
     margin_dir = "up" if margin_delta_pp >= 0 else "down"
 
 # --- Orders ---
-order_growth = mom_pct(filtered_df, order_col, "nunique") if order_col else mom_pct(filtered_df, None, "count")
+order_growth = yoy_pct(filtered_df, order_col, "nunique") if order_col else yoy_pct(filtered_df, None, "count")
 order_share = (total_orders / overall_orders * 100) if overall_orders > 0 else 0
 order_delta_text, order_dir = delta_from_mom_or_fallback(
     order_growth, f"{order_share:.0f}% of total orders", "neutral"
 )
 
 # --- Secondary: Avg Order Value ---
-orders_mom = monthly_agg(filtered_df, order_col, "nunique") if order_col else monthly_agg(filtered_df, None, "count")
-if sales_mom and orders_mom and orders_mom[0] and orders_mom[1]:
-    cur_aov = sales_mom[0] / orders_mom[0] if orders_mom[0] else 0
-    prev_aov = sales_mom[1] / orders_mom[1] if orders_mom[1] else 0
+orders_yoy = monthly_agg(filtered_df, order_col, "nunique") if order_col else monthly_agg(filtered_df, None, "count")
+if sales_yoy and orders_yoy and orders_yoy[0] and orders_yoy[1]:
+    cur_aov = sales_yoy[0] / orders_yoy[0] if orders_yoy[0] else 0
+    prev_aov = sales_yoy[1] / orders_yoy[1] if orders_yoy[1] else 0
     aov_growth = ((cur_aov - prev_aov) / prev_aov * 100) if prev_aov else None
 else:
     aov_growth = None
@@ -406,7 +417,7 @@ aov_delta_text, aov_dir = delta_from_mom_or_fallback(
 
 # --- Secondary: Customers ---
 if customer_col:
-    customer_growth = mom_pct(filtered_df, customer_col, "nunique")
+    customer_growth = yoy_pct(filtered_df, customer_col, "nunique")
     customer_share = (total_customers / overall_customers * 100) if overall_customers else 0
     customer_delta_text, customer_dir = delta_from_mom_or_fallback(
         customer_growth, f"{customer_share:.0f}% of total customers", "neutral"
@@ -418,7 +429,7 @@ else:
 
 # --- Secondary: Quantity ---
 if quantity_col:
-    quantity_growth = mom_pct(filtered_df, quantity_col, "sum")
+    quantity_growth = yoy_pct(filtered_df, quantity_col, "sum")
     quantity_share = (total_quantity / overall_quantity * 100) if overall_quantity else 0
     quantity_delta_text, quantity_dir = delta_from_mom_or_fallback(
         quantity_growth, f"{quantity_share:.0f}% of total units", "neutral"
@@ -430,10 +441,10 @@ else:
 
 # --- Secondary: Discount (rising discount = bad, so color is flipped) ---
 if discount_col:
-    disc_mom = monthly_agg(filtered_df, discount_col, "mean")
-    if disc_mom and disc_mom[1] is not None:
-        disc_growth_pp = (disc_mom[0] - disc_mom[1]) * 100
-        discount_delta_text = f"{disc_growth_pp:+.1f}pp vs Last Month"
+    disc_yoy = monthly_agg(filtered_df, discount_col, "mean")
+    if disc_yoy and disc_yoy[1] is not None:
+        disc_growth_pp = (disc_yoy[0] - disc_yoy[1]) * 100
+        discount_delta_text = f"{disc_growth_pp:+.1f}pp vs Last Year"
         discount_dir = "down" if disc_growth_pp >= 0 else "up"
     else:
         disc_vs_avg_pp = avg_discount - overall_avg_discount if overall_avg_discount is not None else 0
@@ -484,12 +495,12 @@ def generate_quick_insights(data: pd.DataFrame) -> list:
     if "Region" in data.columns:
         region_growth = {}
         for region, rdata in data.groupby("Region"):
-            g = mom_pct(rdata, "Sales", "sum")
+            g = yoy_pct(rdata, "Sales", "sum")
             if g is not None:
                 region_growth[region] = g
         if region_growth:
             best_region = max(region_growth, key=region_growth.get)
-            insights.append(f"**{best_region}** region shows the strongest month-over-month sales growth ({region_growth[best_region]:+.0f}%).")
+            insights.append(f"**{best_region}** region shows the strongest year-over-year sales growth ({region_growth[best_region]:+.0f}%).")
         else:
             region_rev = data.groupby("Region")["Sales"].sum().sort_values(ascending=False)
             if not region_rev.empty:
@@ -497,7 +508,7 @@ def generate_quick_insights(data: pd.DataFrame) -> list:
 
     if aov_growth is not None:
         direction = "increased" if aov_growth >= 0 else "decreased"
-        insights.append(f"Average Order Value has **{direction} {abs(aov_growth):.0f}%** vs last month.")
+        insights.append(f"Average Order Value has **{direction} {abs(aov_growth):.0f}%** vs last year.")
 
     if not insights:
         insights.append("Not enough data in the current filter selection to generate insights.")
@@ -562,25 +573,53 @@ st.write("")
 # chart storytelling order).
 # =================================================================
 if "Order Date" in filtered_df.columns and filtered_df["Order Date"].notna().any():
-    st.markdown("###### 📈 Monthly Revenue Trend")
-    monthly_sales_df = (
-        filtered_df.dropna(subset=["Order Date"])
-        .set_index("Order Date")
-        .resample("ME")["Sales"]
-        .sum()
-        .reset_index()
-    )
-    chart_trend = (
-        alt.Chart(monthly_sales_df)
-        .mark_line(point=True, color=NEUTRAL_BAR_COLOR)
-        .encode(
-            x=alt.X("Order Date:T", title=""),
-            y=alt.Y("Sales:Q", title="Monthly Sales"),
-            tooltip=[alt.Tooltip("Order Date:T", format="%b %Y"), alt.Tooltip("Sales:Q", format="$,.0f")],
+    trend_left, trend_right = st.columns(2)
+
+    with trend_left:
+        st.markdown("###### 📈 Monthly Revenue Trend")
+        monthly_sales_df = (
+            filtered_df.dropna(subset=["Order Date"])
+            .set_index("Order Date")
+            .resample("ME")["Sales"]
+            .sum()
+            .reset_index()
         )
-        .properties(height=260)
-    )
-    st.altair_chart(chart_trend, use_container_width=True)
+        chart_trend = (
+            alt.Chart(monthly_sales_df)
+            .mark_line(point=True, color=NEUTRAL_BAR_COLOR)
+            .encode(
+                x=alt.X("Order Date:T", title=""),
+                y=alt.Y("Sales:Q", title="Monthly Sales"),
+                tooltip=[alt.Tooltip("Order Date:T", format="%b %Y"), alt.Tooltip("Sales:Q", format="$,.0f")],
+            )
+            .properties(height=260)
+        )
+        st.altair_chart(chart_trend, use_container_width=True)
+
+    with trend_right:
+        # Same-month-across-years overlay. This is the actionable view for a
+        # seasonal/spiky dataset: it separates "the usual holiday spike" from
+        # "actual growth or decline" by lining every year up on the same
+        # Jan-Dec axis, rather than comparing adjacent months.
+        st.markdown("###### 📆 Year-over-Year Seasonal Comparison")
+        month_order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        yoy_df = filtered_df.dropna(subset=["Order Date"]).copy()
+        yoy_df["Year"] = yoy_df["Order Date"].dt.year.astype(str)
+        yoy_df["Month"] = yoy_df["Order Date"].dt.strftime("%b")
+        yoy_seasonal = yoy_df.groupby(["Year", "Month"])["Sales"].sum().reset_index()
+
+        chart_yoy = (
+            alt.Chart(yoy_seasonal)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("Month:N", sort=month_order, title=""),
+                y=alt.Y("Sales:Q", title="Monthly Sales"),
+                color=alt.Color("Year:N", legend=alt.Legend(title="Year")),
+                tooltip=["Year", "Month", alt.Tooltip("Sales:Q", format="$,.0f")],
+            )
+            .properties(height=260)
+        )
+        st.altair_chart(chart_yoy, use_container_width=True)
 
 # =================================================================
 # TABS — each tab answers the next business question in sequence:
