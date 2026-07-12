@@ -162,6 +162,12 @@ st.markdown(
 
         /* Tighten the gap between the last chart/section and the tabs */
         .stTabs { margin-top: -0.4rem; }
+
+        /* --- Make sure AI-generated report text always wraps, never overflows --- */
+        [data-testid="stExpander"] * {
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -559,8 +565,10 @@ with summary_right:
 
     if st.session_state.get("ai_summary"):
         with st.expander("View Full AI Report", expanded=True):
-            st.caption(f"Data analyzed: {st.session_state['ai_summary_context']}")
-            st.write(st.session_state["ai_summary"])
+            safe_context = st.session_state['ai_summary_context'].replace("$", "\\$")
+            safe_summary = st.session_state["ai_summary"].replace("$", "\\$")
+            st.caption(f"Data analyzed: {safe_context}")
+            st.markdown(safe_summary)
     elif not generate_clicked:
         st.caption("Click Generate for a Gemini-written narrative summary.")
 
