@@ -1,5 +1,5 @@
 import os
-import google.generativeai as genai
+from google import genai
 from dotenv import load_dotenv
 
 # 1. Unlock the vault and get the API key
@@ -21,9 +21,9 @@ if not api_key:
         "or in Streamlit Cloud → Settings → Secrets when deployed."
     )
 
-# 2. Connect to Google Gemini
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-2.5-flash')
+# 2. Connect to Google Gemini using the new unified SDK
+client = genai.Client(api_key=api_key)
+MODEL_NAME = "gemini-2.5-flash"
 
 def generate_kpi_summary(kpi_data_string):
     """Feeds KPI data to Gemini to generate an executive summary."""
@@ -34,7 +34,10 @@ def generate_kpi_summary(kpi_data_string):
     Data:
     {kpi_data_string}
     """
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=prompt,
+    )
     return response.text
 
 # --- Quick Connection Test ---
