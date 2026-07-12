@@ -23,7 +23,7 @@ if not api_key:
 
 # 2. Connect to Google Gemini using the new unified SDK
 client = genai.Client(api_key=api_key)
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-3.5-flash"
 
 def generate_kpi_summary(kpi_data_string):
     """Feeds KPI data to Gemini to generate an executive summary."""
