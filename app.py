@@ -163,6 +163,23 @@ st.markdown(
         /* Tighten the gap between the last chart/section and the tabs */
         .stTabs { margin-top: -0.4rem; }
 
+        /* --- Full-width AI report card: larger, more readable text --- */
+        .ai-report-card {
+            background: rgba(255,255,255,0.035);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-left: 3px solid #ff9f43;
+            border-radius: 12px;
+            padding: 20px 26px;
+            font-size: 1.02rem;
+            color: #e8eaf0;
+            line-height: 1.85;
+            max-width: 100%;
+        }
+        .ai-report-card p { margin-bottom: 0.9em; }
+        .ai-report-card ul, .ai-report-card ol { padding-left: 1.4em; margin-bottom: 0.9em; }
+        .ai-report-card li { margin-bottom: 0.5em; }
+        .ai-report-card strong { color: #ffffff; }
+
         /* --- Make sure AI-generated report text always wraps, never overflows --- */
         [data-testid="stExpander"] * {
             overflow-wrap: break-word;
@@ -563,14 +580,31 @@ with summary_right:
                 st.session_state.pop("ai_summary", None)
                 st.error(f"⚠️ AI request failed: {e}")
 
-    if st.session_state.get("ai_summary"):
-        with st.expander("View Full AI Report", expanded=True):
-            safe_context = st.session_state['ai_summary_context'].replace("$", "\\$")
-            safe_summary = st.session_state["ai_summary"].replace("$", "\\$")
-            st.caption(f"Data analyzed: {safe_context}")
-            st.markdown(safe_summary)
-    elif not generate_clicked:
+    if not st.session_state.get("ai_summary") and not generate_clicked:
         st.caption("Click Generate for a Gemini-written narrative summary.")
+
+def format_ai_report_html(text: str) -> str:
+    """Converts the AI's markdown-style response (paragraphs, **bold**,
+    line breaks) into HTML, since raw HTML divs bypass Streamlit's
+    built-in markdown parser entirely."""
+    paragraphs = [p for p in text.split("\n\n") if p.strip()]
+    html_parts = []
+    for para in paragraphs:
+        bolded = md_bold_to_html(para)
+        with_breaks = bolded.replace("\n", "<br>")
+        html_parts.append(f"<p>{with_breaks}</p>")
+    return "".join(html_parts)
+
+
+# --- Full-width AI report, rendered below both columns for a wider,
+# more readable "landscape" layout instead of being squeezed into the
+# narrow right-hand column. ---
+if st.session_state.get("ai_summary"):
+    safe_context = st.session_state['ai_summary_context'].replace("$", "\\$")
+    safe_summary = st.session_state["ai_summary"].replace("$", "\\$")
+    st.markdown("###### 🤖 AI-Generated Report — Full View")
+    st.caption(f"Data analyzed: {safe_context}")
+    st.markdown(f'<div class="ai-report-card">{format_ai_report_html(safe_summary)}</div>', unsafe_allow_html=True)
 
 st.write("")
 
