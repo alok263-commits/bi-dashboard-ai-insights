@@ -3,11 +3,23 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 
 # 1. Unlock the vault and get the API key
+# Try .env first (local dev). On Streamlit Cloud there is no .env file,
+# so we fall back to st.secrets, which is where Cloud "Secrets" actually live.
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
 if not api_key:
-    raise ValueError("API Key not found. Please check your .env file.")
+    try:
+        import streamlit as st
+        api_key = st.secrets.get("GEMINI_API_KEY")
+    except Exception:
+        api_key = None
+
+if not api_key:
+    raise ValueError(
+        "API Key not found. Set GEMINI_API_KEY in your .env file locally, "
+        "or in Streamlit Cloud → Settings → Secrets when deployed."
+    )
 
 # 2. Connect to Google Gemini
 genai.configure(api_key=api_key)
@@ -38,4 +50,3 @@ if __name__ == "__main__":
         print(summary)
     except Exception as e:
         print(f"\n❌ API Error: {e}")
-        
